@@ -11,6 +11,7 @@ export default defineConfig({
       '/admin': 'http://localhost:8080',
       '/upload': 'http://localhost:8080',
       '/keys': 'http://localhost:8080',
+      '/hls': 'http://localhost:8080',
       '/healthz': 'http://localhost:8080'
     }
   }

@@ -138,37 +138,145 @@ function VideoList({ videos, selected, onSelect, admin, onRefresh }) {
   return <div className="videoList">{videos.map(v => <div key={v.videoId} className={`videoItem ${selected?.videoId === v.videoId ? 'active' : ''}`}><button onClick={() => onSelect(v)}><b>{v.title}</b><small>{v.segmentCount || 0} segments · {new Date(v.createdAt).toLocaleString()}</small></button>{admin && <button className="danger mini" onClick={() => remove(v)}>Supprimer</button>}</div>)}{videos.length === 0 && <p>Aucune vidéo disponible.</p>}</div>;
 }
 
+function formatTime(seconds = 0) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
 function VideoPlayer({ video }) {
   const ref = useRef(null);
   const hlsRef = useRef(null);
   const [started, setStarted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [playError, setPlayError] = useState('');
   const [segment, setSegment] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const segments = useMemo(() => Array.from({ length: video?.segmentCount || 0 }, (_, i) => i), [video]);
+  const segmentDuration = Math.max(1, duration && segments.length ? duration / segments.length : 6);
+
   useEffect(() => () => { if (hlsRef.current) hlsRef.current.destroy(); }, []);
-  useEffect(() => { setStarted(false); setSegment(0); if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } if (ref.current) ref.current.removeAttribute('src'); }, [video?.videoId]);
+  useEffect(() => {
+    setStarted(false);
+    setLoading(false);
+    setPlayError('');
+    setSegment(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setCaptionsEnabled(false);
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    if (ref.current) {
+      ref.current.pause();
+      ref.current.removeAttribute('src');
+      ref.current.load();
+    }
+  }, [video?.videoId]);
 
   async function start() {
     if (!video || !ref.current) return;
-    const token = await api(`/videos/${video.videoId}/key-token`, { method: 'POST' });
-    if (hlsRef.current) hlsRef.current.destroy();
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        xhrSetup: (xhr, url) => {
-          if (url.includes('/keys/')) xhr.setRequestHeader('Authorization', `Bearer ${token.keyToken}`);
-        }
-      });
-      hlsRef.current = hls;
-      hls.loadSource(video.playlistUrl);
-      hls.attachMedia(ref.current);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => ref.current.play().catch(() => {}));
-      hls.on(Hls.Events.FRAG_CHANGED, (_, data) => setSegment(data.frag?.sn ?? 0));
-    } else {
-      ref.current.src = video.playlistUrl;
-      ref.current.play().catch(() => {});
+    setLoading(true);
+    setPlayError('');
+    try {
+      const tokenData = await api(`/videos/${video.videoId}/key-token`, { method: 'POST' });
+      const keyToken = tokenData.keyToken || tokenData.access_token;
+      if (!keyToken) throw new Error('Jeton de clé absent dans la réponse serveur.');
+      if (hlsRef.current) hlsRef.current.destroy();
+
+      const playlistUrl = video.playlistUrl || `/hls/${video.videoId}/playlist.m3u8`;
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          xhrSetup: (xhr, url) => {
+            if (url.includes('/keys/') || url.includes('/hls/')) {
+              xhr.setRequestHeader('Authorization', `Bearer ${url.includes('/keys/') ? keyToken : session.token}`);
+            }
+          }
+        });
+        hlsRef.current = hls;
+        hls.loadSource(playlistUrl);
+        hls.attachMedia(ref.current);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setStarted(true);
+          ref.current.play().catch(() => setPlayError('Lecture bloquée par le navigateur : cliquez sur le bouton lecture du player.'));
+        });
+        hls.on(Hls.Events.FRAG_CHANGED, (_, data) => setSegment(data.frag?.sn ?? 0));
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) setPlayError(`Erreur HLS : ${data.details || data.type}`);
+        });
+      } else {
+        ref.current.src = playlistUrl;
+        setStarted(true);
+        await ref.current.play();
+      }
+    } catch (e) {
+      setPlayError(e.message || 'Impossible de démarrer la lecture.');
+    } finally {
+      setLoading(false);
     }
-    setStarted(true);
   }
-  return <div><h2>{video?.title || 'Sélectionnez une vidéo'}</h2>{video && <><video ref={ref} controls className="player" onPlay={() => setStarted(true)} onTimeUpdate={e => setSegment(Math.floor((e.currentTarget.currentTime || 0) / 6))} /> <div className="actions"><button onClick={start}>Démarrer la lecture</button><ExportButtons video={video} /></div>{started && <div className="segments"><h3>Segments de la vidéo</h3><div className="segmentGrid">{segments.map(i => <span key={i} className={i === segment ? 'active' : ''}>Segment {i + 1}</span>)}</div></div>}</>}</div>;
+
+  function onTimeUpdate(e) {
+    const t = e.currentTarget.currentTime || 0;
+    const d = e.currentTarget.duration || duration || 0;
+    setCurrentTime(t);
+    if (d) setDuration(d);
+    setSegment(Math.min(segments.length - 1, Math.max(0, Math.floor(t / segmentDuration))));
+  }
+
+  return <div className="videoPlayerPro">
+    <div className="playerHeader">
+      <div>
+        <span className="eyebrow">Lecture protégée</span>
+        <h2>{video?.title || 'Sélectionnez une vidéo'}</h2>
+      </div>
+      {video && <div className="actions">
+        <button className="ghost" onClick={() => setCaptionsEnabled(v => !v)} disabled={!video.subtitlesUrl} title={video.subtitlesUrl ? 'Activer/désactiver les sous-titres' : 'Sous-titres non disponibles'}>CC</button>
+        <ExportButtons video={video} />
+      </div>}
+    </div>
+    {video && <>
+      <div className="playerFrame">
+        {!started && <div className="playerOverlay">
+          <button onClick={start} disabled={loading}>{loading ? 'Préparation...' : '▶ Démarrer la lecture'}</button>
+          <small>Un jeton de session valide est créé, puis les clés AES sont demandées segment par segment.</small>
+        </div>}
+        <video
+          ref={ref}
+          controls
+          className="player"
+          crossOrigin="anonymous"
+          onPlay={() => setStarted(true)}
+          onLoadedMetadata={e => setDuration(e.currentTarget.duration || 0)}
+          onTimeUpdate={onTimeUpdate}
+        >
+          {video.subtitlesUrl && <track key={captionsEnabled ? 'cc-on' : 'cc-off'} kind="subtitles" src={video.subtitlesUrl} srcLang="fr" label="Français" default={captionsEnabled} />}
+        </video>
+      </div>
+      {playError && <div className="alert">{playError}</div>}
+      <div className="playbackPanel">
+        <div className="playbackStats">
+          <div><b>{formatTime(currentTime)}</b><small>Temps courant</small></div>
+          <div><b>{segments.length}</b><small>Segments HLS</small></div>
+          <div><b>{video.subtitlesUrl ? (captionsEnabled ? 'Activés' : 'Disponibles') : 'Indisponibles'}</b><small>Sous-titres</small></div>
+          <div><b>{started ? 'Lecture active' : 'En attente'}</b><small>Statut</small></div>
+        </div>
+        <div className="realtimeTitle"><span>Segments lus en temps réel</span><small>Segment courant : {segments.length ? segment + 1 : 0}</small></div>
+        <div className="segmentTimeline">
+          {segments.map(i => <button key={i} className={i === segment ? 'active' : i < segment ? 'done' : ''} onClick={() => { if (ref.current) { ref.current.currentTime = i * segmentDuration; ref.current.play().catch(() => {}); } }}>
+            <span>{i + 1}</span><small>{formatTime(i * segmentDuration)}</small>
+          </button>)}
+        </div>
+        <div className="securityFlow">
+          <div className="flowStep ok"><b>1</b><span>Jeton de session validé</span></div>
+          <div className={started ? 'flowStep ok' : 'flowStep'}><b>2</b><span>Playlist HLS chargée</span></div>
+          <div className={started ? 'flowStep ok' : 'flowStep'}><b>3</b><span>Clé lue dans Key Vault à chaque segment</span></div>
+        </div>
+      </div>
+    </>}
+  </div>;
 }
 
 function ExportButtons({ video }) {

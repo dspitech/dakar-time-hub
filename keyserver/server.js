@@ -142,7 +142,9 @@ const retentionScoresTable = tableClient("RetentionScores");
 function cleanTableEntity(entity) {
   const clean = {};
   for (const [key, value] of Object.entries(entity || {})) {
-    if (key === "etag" || key === "timestamp" || key.startsWith("odata.")) continue;
+    const k = String(key);
+    if (k === "etag" || k === "timestamp" || k === "Timestamp" || k.startsWith("odata.")) continue;
+    if (k.includes(".") || k.startsWith("_")) continue;
     clean[key] = value;
   }
   return clean;
@@ -264,7 +266,7 @@ const keyLimiter = rateLimit({
 
 app.use((req, res, next) => { console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`); next(); });
 
-app.use(["/keys", "/videos"], (req, res, next) => {
+app.use(["/keys", "/videos", "/hls"], (req, res, next) => {
   if (req.path.includes("download-key") || req.path.match(/^\/[a-zA-Z0-9-]+\/\d+$/)) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   }
@@ -765,7 +767,7 @@ app.post("/upload", requireSession(["admin"]), upload.single("video"), async (re
 
     res.json({
       videoId, title, segmentCount,
-      playlistUrl: `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${HLS_CONTAINER}/${videoId}/playlist.m3u8`,
+      playlistUrl: `/hls/${videoId}/playlist.m3u8`,
       transcriptionStatus,
       message: "Vidéo segmentée et chiffrée avec succès (une clé par segment)",
     });
@@ -803,9 +805,9 @@ app.get("/videos", requireSession(), async (req, res) => {
         videos.push({
           videoId: meta.videoId, title: meta.title, ownerUsername: meta.ownerUsername,
           createdAt: meta.createdAt, segmentCount: meta.segmentCount || 0,
-          playlistUrl: `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${HLS_CONTAINER}/${videoId}/playlist.m3u8`,
+          playlistUrl: `/hls/${videoId}/playlist.m3u8`,
           transcriptionStatus: meta.transcriptionStatus || "unavailable",
-          subtitlesUrl: meta.transcriptionStatus === "ready" ? meta.subtitlesUrl : null,
+          subtitlesUrl: meta.transcriptionStatus === "ready" ? `/hls/${videoId}/subtitles.vtt` : null,
         });
       } catch { /* pas de meta.json -> ignorer */ }
     }
@@ -826,7 +828,7 @@ app.get("/videos/:videoId/transcription-status", requireSession(), async (req, r
     res.json({
       videoId: req.params.videoId,
       transcriptionStatus: meta.transcriptionStatus || "unavailable",
-      subtitlesUrl: meta.transcriptionStatus === "ready" ? meta.subtitlesUrl : null,
+      subtitlesUrl: meta.transcriptionStatus === "ready" ? `/hls/${req.params.videoId}/subtitles.vtt` : null,
     });
   } catch {
     res.status(404).json({ error: "Vidéo introuvable" });
@@ -857,6 +859,45 @@ app.delete("/videos/:videoId", requireSession(["admin"]), async (req, res) => {
   } catch (err) {
     console.error("[DELETE VIDEO ERROR]", err);
     res.status(500).json({ error: "Échec de la suppression" });
+  }
+});
+
+
+// ============================================================
+// PROXY HLS AUTHENTIFIÉ — évite les problèmes CORS/blob privé
+// ============================================================
+app.get("/hls/:videoId/playlist.m3u8", requireSession(), async (req, res) => {
+  const { videoId } = req.params;
+  try {
+    const blob = hlsContainerClient.getBlockBlobClient(`${videoId}/playlist.m3u8`);
+    let playlist = (await blob.downloadToBuffer()).toString("utf8");
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    playlist = playlist.replace(/URI="[^"]*\/keys\/([^\/]+)\/(\d+)"/g, (_m, id, seg) => `URI="${baseUrl}/keys/${id}/${seg}"`);
+    res.set({
+      "Content-Type": "application/vnd.apple.mpegurl; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    });
+    res.send(playlist);
+  } catch (err) {
+    console.error("[HLS PLAYLIST ERROR]", err);
+    res.status(404).json({ error: "Playlist HLS introuvable", detail: err.message });
+  }
+});
+
+app.get("/hls/:videoId/:filename", requireSession(), async (req, res) => {
+  const { videoId, filename } = req.params;
+  if (!/^(segment_\d+\.ts|subtitles\.vtt)$/.test(filename)) return res.status(400).json({ error: "Fichier HLS invalide" });
+  try {
+    const blob = hlsContainerClient.getBlockBlobClient(`${videoId}/${filename}`);
+    const buf = await blob.downloadToBuffer();
+    res.set({
+      "Content-Type": filename.endsWith(".vtt") ? "text/vtt; charset=utf-8" : "video/MP2T",
+      "Cache-Control": filename.endsWith(".vtt") ? "no-store" : "public, max-age=300",
+    });
+    res.send(buf);
+  } catch (err) {
+    console.error("[HLS SEGMENT ERROR]", err);
+    res.status(404).json({ error: "Segment HLS introuvable", detail: err.message });
   }
 });
 
@@ -1123,7 +1164,7 @@ app.get("/videos/:videoId/export", requireSession(), async (req, res) => {
     }
     const payload = {
       exportedAt: new Date().toISOString(), exportedBy: req.user.username,
-      video: { ...meta, playlistUrl: `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${HLS_CONTAINER}/${req.params.videoId}/playlist.m3u8` },
+      video: { ...meta, playlistUrl: `/hls/${req.params.videoId}/playlist.m3u8` },
       comments, logs, metadata: { encryption: "AES-128-CBC", hlsSegmentSeconds: HLS_SEGMENT_SECONDS, tableBackend: TABLE_BACKEND }
     };
     await audit({ type: "video_export", username: req.user.username, videoId: req.params.videoId, ip: clientIp(req), result: "success", detail: format });
