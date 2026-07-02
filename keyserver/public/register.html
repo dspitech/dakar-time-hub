@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inscription — Zero-Trust HLS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-shell">
+    <a href="index.html" class="back-link">← Retour à l'accueil</a>
+    <div class="auth-card panel card-surface">
+      <div class="brand">
+        <span class="brand-mark">◈</span>
+        <div>
+          <div class="brand-name">ZERO‑TRUST HLS</div>
+          <div class="brand-sub">Création de compte</div>
+        </div>
+      </div>
+      <h1>S'inscrire</h1>
+      <p class="muted">Créez un compte utilisateur pour accéder à la bibliothèque vidéo sécurisée.</p>
+
+      <form id="registerForm" class="authform">
+        <label for="registerUsername">Identifiant</label>
+        <input type="text" id="registerUsername" class="text-input" placeholder="nom.utilisateur" required autocomplete="username" minlength="3">
+
+        <label for="registerPassword">Mot de passe</label>
+        <input type="password" id="registerPassword" class="text-input" placeholder="Minimum 6 caractères" required autocomplete="new-password" minlength="6">
+
+        <button type="submit" class="btn-primary" id="registerSubmitBtn">Créer mon compte</button>
+      </form>
+
+      <p class="auth-footer muted">
+        Déjà inscrit ? <a href="login.html">Se connecter</a>
+      </p>
+
+      <div id="authLog" class="log error" hidden></div>
+    </div>
+  </div>
+  <script src="auth.js"></script>
+</body>
+</html>

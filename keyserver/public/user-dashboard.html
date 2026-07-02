@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Espace utilisateur — Zero-Trust HLS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-page">
+
+  <aside class="sidebar">
+    <div class="brand side">
+      <span class="brand-mark">◈</span>
+      <div>
+        <div class="brand-name">ZERO‑TRUST</div>
+        <div class="brand-sub">Espace membre</div>
+      </div>
+    </div>
+
+    <div class="user-mini card-surface">
+      <span id="roleBadge" class="role-badge">—</span>
+      <strong id="usernameLabel">—</strong>
+    </div>
+
+    <nav>
+      <div class="side-nav-label">Navigation</div>
+      <div class="side-menu">
+        <button data-view="overview" class="active">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
+          Vue globale
+        </button>
+        <button data-view="library">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+          Bibliothèque
+        </button>
+        <button data-view="comments">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          Commentaires
+        </button>
+      </div>
+    </nav>
+
+    <button id="logoutBtn" class="btn-ghost logout">Déconnexion</button>
+  </aside>
+
+  <main class="dash-main">
+    <header class="dash-header">
+      <div>
+        <span class="eyebrow" id="dashEyebrow">Espace lecture sécurisé</span>
+        <h1 id="dashTitle">Dashboard utilisateur</h1>
+      </div>
+      <div class="dash-header-actions">
+        <span class="status-pill" id="apiStatus"><span class="dot"></span> vérification…</span>
+      </div>
+    </header>
+
+    <section id="view-overview" class="dash-view">
+      <div class="cards">
+        <article class="stat-card card-surface">
+          <div class="stat-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+          </div>
+          <b id="statVideos">0</b>
+          <span>Vidéos disponibles</span>
+          <div class="stat-trend">Accès lecture chiffrée</div>
+        </article>
+        <article class="stat-card card-surface">
+          <div class="stat-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          </div>
+          <b id="statSegments">0</b>
+          <span>Segments chiffrés</span>
+          <div class="stat-trend">Protection AES-128</div>
+        </article>
+        <article class="stat-card card-surface">
+          <div class="stat-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <b id="statRole">—</b>
+          <span>Votre rôle</span>
+          <div class="stat-trend">Droits appliqués côté serveur</div>
+        </article>
+      </div>
+
+      <div class="panel card-surface">
+        <div class="panel-label">Bienvenue</div>
+        <p id="welcomeText">Consultez la bibliothèque, lisez les vidéos en streaming sécurisé, commentez et demandez un téléchargement motivé.</p>
+        <div class="quick-actions" id="userQuickActions">
+          <button type="button" class="quick-action-btn" data-goto="library">
+            <div class="qa-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+            <div class="qa-label">Parcourir la bibliothèque</div>
+            <div class="qa-desc">Lecture HLS avec clés par segment</div>
+          </button>
+          <button type="button" class="quick-action-btn" data-goto="comments">
+            <div class="qa-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+            <div class="qa-label">Voir les commentaires</div>
+            <div class="qa-desc">Discuter autour des vidéos</div>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-library" class="dash-view" hidden>
+      <div class="grid-2">
+        <div class="panel card-surface">
+          <div class="panel-head">
+            <div>
+              <div class="panel-label">Vidéos</div>
+              <h2>Bibliothèque</h2>
+            </div>
+            <button type="button" class="btn-action ghost" id="refreshBtn">↻ Actualiser</button>
+          </div>
+          <ul class="video-list" id="videoList"><li class="empty">Chargement…</li></ul>
+        </div>
+
+        <div class="panel player-panel card-surface">
+          <div class="player-head">
+            <div>
+              <div class="panel-label">Lecture protégée</div>
+              <h2 id="playerTitle">Sélectionnez une vidéo</h2>
+            </div>
+            <div class="player-actions">
+              <button type="button" class="btn-action ghost small" id="ccBtn" hidden title="Sous-titres">CC</button>
+              <button type="button" class="btn-action primary small" id="downloadBtn" hidden>⬇ Demander téléchargement</button>
+              <button type="button" class="btn-action ghost small" id="exportJsonBtn" hidden>Export JSON</button>
+              <button type="button" class="btn-action ghost small" id="exportCsvBtn" hidden>Export CSV</button>
+            </div>
+          </div>
+          <video id="video" controls></video>
+          <div class="segment-monitor" id="segmentMonitor" hidden>
+            <div class="panel-label">Segments lus en temps réel</div>
+            <div id="segmentTimeline" class="segment-chain live"></div>
+          </div>
+          <div class="key-trace">
+            <div class="key-trace-row"><span>1.</span> Jeton de session validé</div>
+            <div class="key-trace-row"><span>2.</span> Playlist chargée avec clés par segment</div>
+            <div class="key-trace-row"><span>3.</span> Clé lue dans Key Vault à chaque segment</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-comments" class="dash-view" hidden>
+      <div class="panel card-surface">
+        <div class="panel-label">Commentaires</div>
+        <h2 id="commentsTitle">Sélectionnez une vidéo dans la bibliothèque</h2>
+        <ul class="comment-list" id="commentList"></ul>
+        <form id="commentForm" class="comment-form">
+          <input type="text" id="commentInput" class="text-input" placeholder="Ajouter un commentaire…" maxlength="500">
+          <button class="btn-primary small" type="submit">Publier</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="view-upload" class="dash-view" hidden></section>
+    <section id="view-videos" class="dash-view" hidden></section>
+    <section id="view-requests" class="dash-view" hidden></section>
+    <section id="view-users" class="dash-view" hidden></section>
+    <section id="view-audit" class="dash-view" hidden></section>
+  </main>
+
+  <div class="modal-overlay" id="downloadModalOverlay" hidden>
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="downloadModalClose">×</button>
+      <div class="modal-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <div id="downloadModalBody"></div>
+    </div>
+  </div>
+
+  <div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-card">
+      <h3 id="confirmTitle">Confirmer</h3>
+      <p id="confirmMessage">Êtes-vous sûr ?</p>
+      <div class="confirm-actions">
+        <button type="button" class="btn-action ghost" id="confirmCancel">Annuler</button>
+        <button type="button" class="btn-action primary" id="confirmOk">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

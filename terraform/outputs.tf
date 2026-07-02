@@ -38,3 +38,21 @@ output "admin_password" {
 output "application_insights_name" {
   value = azurerm_application_insights.main.name
 }
+
+output "cosmosdb_account_name" {
+  value = azurerm_cosmosdb_account.main.name
+}
+
+output "cosmosdb_table_endpoint" {
+  value = "https://${azurerm_cosmosdb_account.main.name}.table.cosmos.azure.com:443/"
+}
+
+output "speech_service_name" {
+  description = "Nom de la ressource Azure AI Speech utilisée pour la transcription automatique (vide si enable_transcription = false)"
+  value       = var.enable_transcription ? azurerm_cognitive_account.speech[0].name : null
+}
+
+output "speech_service_region" {
+  description = "Région du service de transcription automatique (vide si enable_transcription = false)"
+  value       = var.enable_transcription ? azurerm_cognitive_account.speech[0].location : null
+}

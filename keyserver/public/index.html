@@ -1,301 +1,106 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Zero-Trust HLS — Plateforme de diffusion vidéo chiffrée</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zero-Trust HLS — Plateforme vidéo sécurisée</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="site-page">
 
-<!-- ===================== NAVBAR ===================== -->
-<header class="navbar">
-  <div class="brand">
-    <span class="brand-mark">◈</span>
-    <div>
-      <div class="brand-name">ZERO&#8209;TRUST&nbsp;HLS</div>
-      <div class="brand-sub">diffusion vidéo chiffrée AES&#8209;128</div>
-    </div>
-  </div>
-
-  <nav class="navlinks" id="navTabs" hidden>
-    <button class="navlink active" data-tab="library">Bibliothèque</button>
-    <button class="navlink" data-tab="admin" id="navAdminTab" hidden>Administration</button>
-  </nav>
-
-  <div class="nav-right">
-    <span class="status-pill" id="apiStatus"><span class="dot"></span> vérification…</span>
-    <div id="userBox" class="user-box" hidden>
-      <span class="role-badge" id="roleBadge">user</span>
-      <span id="usernameLabel"></span>
-      <button class="btn-ghost" id="logoutBtn">Déconnexion</button>
-    </div>
-  </div>
-</header>
-
-<!-- ===================== HERO (visible avant connexion) ===================== -->
-<section class="hero" id="heroSection">
-  <div class="hero-copy">
-    <div class="eyebrow">Pipeline Zero-Trust · Azure Container Apps · Key Vault · Log Analytics</div>
-    <h1>Le contenu circule en clair nulle part.<br>Seule une identité vérifiée obtient la clé.</h1>
-    <p>Chaque vidéo est découpée en segments HLS chiffrés en <strong>AES‑128</strong>. La playlist est
-      publique — elle ne contient que l'adresse du serveur de clés, jamais la clé. Le serveur de clés ne
-      répond qu'à un jeton de session valide, non expiré, non révoqué — et journalise chaque délivrance.</p>
-    <div class="hero-stats">
-      <div class="hero-stat"><div class="n">7</div><div class="l">étapes du flux de lecture protégée</div></div>
-      <div class="hero-stat"><div class="n">120s</div><div class="l">durée de vie d'un jeton clé</div></div>
-      <div class="hero-stat"><div class="n">0</div><div class="l">clé stockée en clair côté serveur d'origine</div></div>
-    </div>
-  </div>
-
-  <div class="authbox panel" id="authBox">
-    <div class="tabs">
-      <button class="tab active" data-authtab="login">Connexion</button>
-      <button class="tab" data-authtab="register">Créer un compte</button>
-    </div>
-
-    <form id="loginForm" class="authform">
-      <label>Identifiant</label>
-      <input type="text" id="loginUsername" class="text-input" autocomplete="username" required />
-      <label>Mot de passe</label>
-      <input type="password" id="loginPassword" class="text-input" autocomplete="current-password" required />
-      <button type="submit" class="btn-primary">Se connecter</button>
-    </form>
-
-    <form id="registerForm" class="authform" hidden>
-      <label>Choisir un identifiant</label>
-      <input type="text" id="registerUsername" class="text-input" autocomplete="username" required />
-      <label>Choisir un mot de passe</label>
-      <input type="password" id="registerPassword" class="text-input" autocomplete="new-password" required />
-      <button type="submit" class="btn-primary">Créer mon compte</button>
-    </form>
-
-    <div class="authbox-sep">ou</div>
-    <button class="btn-outline" id="guestBtn">Continuer en invité (session éphémère)</button>
-
-    <div class="log" id="authLog" hidden></div>
-  </div>
-</section>
-
-<!-- ===================== MARKETING (visible avant connexion) ===================== -->
-<section class="marketing" id="marketingSection">
-
-  <div class="section-head">
-    <div class="panel-label">Fonctionnalités</div>
-    <h2>Une seule plateforme pour l'ingestion, la protection et la revue</h2>
-  </div>
-  <div class="feature-grid">
-    <div class="feature-card">
-      <div class="feature-icon">🔐</div>
-      <h3>Chiffrement automatique</h3>
-      <p>Chaque upload est segmenté en HLS et chiffré en AES‑128 par ffmpeg, sans intervention
-        manuelle. Une clé unique par vidéo, générée aléatoirement, jamais dérivée d'un mot de passe.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🪪</div>
-      <h3>Rôles &amp; permissions</h3>
-      <p>Professionnel (admin) pour la gestion des vidéos, Utilisateur final pour la lecture et les
-        commentaires, Invité pour une session de démonstration éphémère — chaque action vérifiée
-        côté serveur, jamais seulement côté interface.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🗝️</div>
-      <h3>Serveur de clés Zero-Trust</h3>
-      <p>La clé AES‑128 n'est jamais servie sans un jeton signé, à courte durée de vie, scopé à une
-        seule vidéo, et révocable immédiatement à la déconnexion.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📊</div>
-      <h3>Audit &amp; observabilité</h3>
-      <p>Chaque connexion, upload, suppression et délivrance de clé est journalisée — consultable en
-        direct dans l'espace Administration, et exportable vers Application Insights.</p>
-    </div>
-  </div>
-
-  <div class="section-head">
-    <div class="panel-label">Comment ça marche</div>
-    <h2>De l'upload à la lecture protégée</h2>
-  </div>
-  <div class="steps-row">
-    <div class="step"><div class="step-n">1</div><div class="step-t">Un professionnel dépose une vidéo</div><div class="step-d">Découpage HLS et chiffrement AES‑128 automatiques côté serveur</div></div>
-    <div class="step"><div class="step-n">2</div><div class="step-t">La playlist est publique</div><div class="step-d">Elle ne référence que l'adresse du serveur de clés, jamais la clé</div></div>
-    <div class="step"><div class="step-n">3</div><div class="step-t">Le lecteur demande un jeton</div><div class="step-d">Jeton de session → jeton clé court, scopé à la vidéo demandée</div></div>
-    <div class="step"><div class="step-n">4</div><div class="step-t">La clé est délivrée et journalisée</div><div class="step-d">Lue dans Key Vault à la volée, jamais mise en cache, accès tracé</div></div>
-  </div>
-
-  <div class="section-head">
-    <div class="panel-label">Rôles de la plateforme</div>
-    <h2>Un modèle d'accès simple et strict</h2>
-  </div>
-  <div class="roles-grid">
-    <div class="role-card">
-      <span class="role-badge role-admin">Professionnel</span>
-      <p>Dépose, renomme et supprime les vidéos ; modère les commentaires ; consulte le journal d'audit complet.</p>
-    </div>
-    <div class="role-card">
-      <span class="role-badge role-user">Utilisateur final</span>
-      <p>Visionne les vidéos disponibles et participe aux commentaires horodatés sur ses propres contributions.</p>
-    </div>
-    <div class="role-card">
-      <span class="role-badge role-guest">Invité</span>
-      <p>Session de démonstration éphémère : accès en lecture, révoqué et purgé automatiquement à la déconnexion.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ===================== APP (visible après connexion) ===================== -->
-<main class="layout" id="appLayout" hidden>
-
-  <!-- ---------- TAB : BIBLIOTHEQUE ---------- -->
-  <section class="tabpanel" id="tab-library">
-    <div class="grid-2">
-      <div class="panel library">
-        <div class="panel-label">Vidéos disponibles</div>
-        <div class="library-head">
-          <h2>Bibliothèque</h2>
-          <button class="btn-ghost" id="refreshBtn">↻ actualiser</button>
-        </div>
-        <ul class="video-list" id="videoList">
-          <li class="empty">Chargement…</li>
-        </ul>
+  <header class="topbar pro">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <div>
+        <div class="brand-name">ZERO‑TRUST HLS</div>
+        <div class="brand-sub">plateforme vidéo chiffrée AES‑128</div>
       </div>
+    </div>
+    <nav class="topnav">
+      <a href="status.html">Statut</a>
+      <a href="login.html">Connexion</a>
+      <a class="btn-link" href="register.html">Créer un compte</a>
+    </nav>
+  </header>
 
-      <div class="panel player-panel">
-        <div class="panel-label">Lecture protégée</div>
-        <div class="player-head">
-          <h2 id="playerTitle">Sélectionnez une vidéo</h2>
-          <button class="btn-outline small" id="downloadBtn" hidden>⬇ Télécharger</button>
-        </div>
-        <video id="video" controls></video>
-        <div class="key-trace" id="keyTrace">
-          <div class="key-trace-row"><span>1.</span> Jeton de session déjà obtenu au login</div>
-          <div class="key-trace-row"><span>2.</span> Playlist chargée — une clé distincte par segment</div>
-          <div class="key-trace-row"><span>3.</span> Jeton clé (120s) demandé au Key Server</div>
-          <div class="key-trace-row"><span>4.</span> Clés relues dans Key Vault, jamais mises en cache ; rotation automatique après la lecture</div>
-        </div>
-
-        <div class="comments" id="commentsBox" hidden>
-          <div class="panel-label">Commentaires</div>
-          <ul class="comment-list" id="commentList"></ul>
-          <form id="commentForm" class="comment-form">
-            <input type="text" id="commentInput" class="text-input" placeholder="Ajouter un commentaire…" maxlength="500" />
-            <button type="submit" class="btn-primary small">Publier</button>
-          </form>
+  <main class="landing">
+    <section class="hero-pro">
+      <div>
+        <span class="eyebrow">Azure · Cosmos DB · Key Vault · HLS chiffré</span>
+        <h1>Un portail vidéo sécurisé pour administrateurs et utilisateurs.</h1>
+        <p>Segmentation HLS, chiffrement AES‑128 par segment, contrôle des droits RBAC, commentaires, demandes de téléchargement motivées, audit complet et exports JSON/CSV.</p>
+        <div class="hero-actions">
+          <a class="btn-primary as-link" href="login.html">Se connecter</a>
+          <a class="btn-outline as-link" href="register.html">Créer un compte</a>
         </div>
       </div>
-    </div>
-  </section>
+      <div class="hero-card card-surface">
+        <div class="metric"><b>1 clé</b><span>par segment vidéo</span></div>
+        <div class="metric"><b>120s</b><span>jeton clé court</span></div>
+        <div class="metric"><b>RBAC</b><span>admin / utilisateur / invité</span></div>
+      </div>
+    </section>
 
-  <!-- ---------- TAB : ADMINISTRATION ---------- -->
-  <section class="tabpanel" id="tab-admin" hidden>
-
-    <div class="panel vault">
-      <div class="panel-label">Déposer une vidéo</div>
-      <h2>Upload → segmentation → chiffrement automatique</h2>
-      <form id="uploadForm">
-        <label class="dropzone" id="dropzone" for="fileInput">
-          <input type="file" id="fileInput" accept="video/*" hidden />
-          <div class="dropzone-icon">⛶</div>
-          <div class="dropzone-text" id="dropzoneText">Glissez un fichier ici, ou cliquez pour parcourir</div>
-          <div class="dropzone-hint">MP4 · MOV · MKV — 1 Go max</div>
-        </label>
-        <input type="text" id="titleInput" placeholder="Titre de la vidéo (optionnel)" class="text-input" />
-        <button type="submit" class="btn-primary" id="uploadBtn" disabled>Téléverser &amp; chiffrer</button>
-      </form>
-
-      <div class="pipeline" id="pipeline" hidden>
-        <div class="pipeline-row">
-          <span class="pipeline-label" id="pipelineLabel">Téléversement…</span>
-          <span class="pipeline-pct" id="pipelinePct">0%</span>
+    <section class="feature-grid wide">
+      <article class="feature-card card-surface">
+        <div class="feature-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
         </div>
-        <div class="upload-bar"><div class="upload-bar-fill" id="uploadBarFill"></div></div>
-        <div class="segment-chain" id="segmentChain"></div>
+        <h3>Dashboard admin</h3>
+        <p>Upload, segmentation, gestion des vidéos, comptes, demandes de téléchargement avec approbation/refus, audit et exports.</p>
+      </article>
+      <article class="feature-card card-surface">
+        <div class="feature-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </div>
+        <h3>Dashboard utilisateur</h3>
+        <p>Bibliothèque, lecture sécurisée HLS, segments visibles en temps réel, commentaires et demandes motivées.</p>
+      </article>
+      <article class="feature-card card-surface">
+        <div class="feature-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3>Zero-Trust</h3>
+        <p>Clés AES stockées dans Key Vault, rotation automatique, jetons courts et journal d'audit complet.</p>
+      </article>
+      <article class="feature-card card-surface">
+        <div class="feature-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </div>
+        <h3>Cosmos DB</h3>
+        <p>Users, Videos, Comments, DownloadRequests, AuthLogs, RevokedTokens et AuditLog.</p>
+      </article>
+    </section>
+
+    <section class="panel big card-surface">
+      <div class="panel-label">Flux global</div>
+      <div class="steps-row">
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-t">Connexion</div>
+          <div class="step-d">Le rôle détermine automatiquement le dashboard cible.</div>
+        </div>
+        <div class="step">
+          <div class="step-n">2</div>
+          <div class="step-t">Lecture</div>
+          <div class="step-d">La playlist déclenche la demande de clés segment par segment.</div>
+        </div>
+        <div class="step">
+          <div class="step-n">3</div>
+          <div class="step-t">Téléchargement</div>
+          <div class="step-d">L'utilisateur saisit une raison, l'admin approuve ou refuse.</div>
+        </div>
+        <div class="step">
+          <div class="step-n">4</div>
+          <div class="step-t">Audit</div>
+          <div class="step-d">Connexions, vidéos, exports et clés sont journalisés.</div>
+        </div>
       </div>
-      <div class="log" id="uploadLog" hidden></div>
-    </div>
+    </section>
+  </main>
 
-    <div class="grid-2">
-      <div class="panel">
-        <div class="panel-label">Gestion des vidéos</div>
-        <h2>Modifier / supprimer</h2>
-        <table class="data-table" id="adminVideoTable">
-          <thead><tr><th>Titre</th><th>Propriétaire</th><th>Créée</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-
-      <div class="panel">
-        <div class="panel-label">Comptes</div>
-        <h2>Utilisateurs</h2>
-        <table class="data-table" id="usersTable">
-          <thead><tr><th>Identifiant</th><th>Rôle</th><th>Créé</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-label">Demandes de téléchargement</div>
-      <div class="library-head">
-        <h2>Autorisations à valider</h2>
-        <button class="btn-ghost" id="refreshDownloadReqBtn">↻ actualiser</button>
-      </div>
-      <table class="data-table" id="downloadReqTable">
-        <thead><tr><th>Vidéo</th><th>Demandeur</th><th>Demandée le</th><th>Statut</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="panel">
-      <div class="panel-label">Observabilité &amp; audit</div>
-      <div class="library-head">
-        <h2>Journal d'audit (délivrances de clé, connexions, CRUD, rotations)</h2>
-        <button class="btn-ghost" id="refreshAuditBtn">↻ actualiser</button>
-      </div>
-      <table class="data-table" id="auditTable">
-        <thead><tr><th>Horodatage</th><th>Type</th><th>Utilisateur</th><th>Vidéo</th><th>IP</th><th>Résultat</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </section>
-
-</main>
-
-<!-- ===================== MODAL DE TELECHARGEMENT ===================== -->
-<div class="modal-overlay" id="downloadModalOverlay" hidden>
-  <div class="modal-card">
-    <button class="modal-close" id="downloadModalClose">×</button>
-    <div class="modal-icon">🔒</div>
-    <div id="downloadModalBody"></div>
-  </div>
-</div>
-
-<footer class="footer-pro">
-  <div class="footer-cols">
-    <div class="footer-col">
-      <div class="brand-name" style="margin-bottom:8px;">ZERO&#8209;TRUST&nbsp;HLS</div>
-      <p>Plateforme de diffusion vidéo chiffrée, conçue pour la revue collaborative de contenus sensibles.</p>
-    </div>
-    <div class="footer-col">
-      <div class="footer-title">Produit</div>
-      <a href="#marketingSection">Fonctionnalités</a>
-      <a href="#marketingSection">Comment ça marche</a>
-      <a href="status.html">Statut du service</a>
-      <a href="offline-player.html">Lecteur hors-ligne</a>
-    </div>
-    <div class="footer-col">
-      <div class="footer-title">Infrastructure</div>
-      <span>Azure Container Apps</span>
-      <span>Blob Storage · Key Vault</span>
-      <span>Table Storage · App Insights</span>
-    </div>
-  </div>
-  <div class="footer-bottom">Azure Container Apps · Blob Storage · Key Vault · Table Storage · Application Insights · Log Analytics — sans ACR</div>
-</footer>
-
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
-<script src="app.js"></script>
+  <footer class="footer-bottom">Zero‑Trust HLS · Azure Container Apps · Cosmos DB · Key Vault · Blob Storage</footer>
 </body>
 </html>

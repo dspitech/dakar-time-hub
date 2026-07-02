@@ -136,6 +136,77 @@ resource "azurerm_storage_blob" "app_package" {
   content_md5             = filemd5(local.app_package_path)
 }
 
+
+# ============================================================
+# COSMOS DB TABLE API (base de données applicative)
+# Tables/entités utilisées par l'application :
+# - Users : comptes, rôles, comptes invités
+# - Videos : métadonnées vidéos
+# - VideoLogs : événements liés à une vidéo
+# - Comments : commentaires par vidéo
+# - AuthLogs : connexions et inscriptions
+# - DownloadRequests : demandes de téléchargement motivées
+# - RevokedTokens : révocation des sessions JWT
+# - AuditLog : audit global
+# ============================================================
+resource "azurerm_cosmosdb_account" "main" {
+  name                = "cosmos-ztstream-${random_integer.suffix.result}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  offer_type          = "Standard"
+  kind                = "GlobalDocumentDB"
+
+  capabilities {
+    name = "EnableTable"
+  }
+
+  consistency_policy {
+    consistency_level = "Session"
+  }
+
+  geo_location {
+    location          = azurerm_resource_group.main.location
+    failover_priority = 0
+  }
+
+  tags = azurerm_resource_group.main.tags
+}
+
+locals {
+  cosmos_tables = toset([
+    "Users",
+    "Videos",
+    "VideoLogs",
+    "Comments",
+    "AuthLogs",
+    "DownloadRequests",
+    "RevokedTokens",
+    "AuditLog"
+  ])
+}
+
+resource "azurerm_cosmosdb_table" "app" {
+  for_each            = local.cosmos_tables
+  name                = each.key
+  resource_group_name = azurerm_resource_group.main.name
+  account_name        = azurerm_cosmosdb_account.main.name
+  throughput          = 400
+}
+
+resource "azurerm_monitor_diagnostic_setting" "cosmos_diag" {
+  name                       = "diag-cosmos-${random_integer.suffix.result}"
+  target_resource_id         = azurerm_cosmosdb_account.main.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+
+  enabled_log {
+    category = "DataPlaneRequests"
+  }
+  metric {
+    category = "Requests"
+    enabled  = true
+  }
+}
+
 # ============================================================
 # TABLES (comptes utilisateurs, commentaires, révocation de
 # jetons, journal d'audit) — accès exclusivement via identité
@@ -190,6 +261,23 @@ resource "azurerm_monitor_diagnostic_setting" "storage_blob_diag" {
 # événements custom de login/upload/délivrance de clé) —
 # alimente le même workspace Log Analytics que le reste.
 # ============================================================
+# ============================================================
+# TRANSCRIPTION AUTOMATIQUE — Azure AI Speech (sous-titres façon YouTube)
+# ============================================================
+# Ressource optionnelle (var.enable_transcription) : le Key Server génère
+# des sous-titres .vtt à l'upload en appelant l'API "reconnaissance vocale
+# courte" de ce service, segment par segment. Si désactivée, le Key Server
+# détecte l'absence de clé/région au démarrage et n'affiche simplement pas
+# le bouton "CC" — aucune autre partie du projet n'en dépend.
+resource "azurerm_cognitive_account" "speech" {
+  count               = var.enable_transcription ? 1 : 0
+  name                = "spe-ztstream-${random_integer.suffix.result}"
+  location            = var.speech_service_location != "" ? var.speech_service_location : var.location
+  resource_group_name = azurerm_resource_group.main.name
+  kind                = "SpeechServices"
+  sku_name            = "S0"
+}
+
 resource "azurerm_application_insights" "main" {
   name                = "appi-ztstream-${random_integer.suffix.result}"
   location            = azurerm_resource_group.main.location
@@ -333,6 +421,22 @@ resource "azurerm_container_app" "keyserver" {
         value = azurerm_storage_account.main.name
       }
       env {
+        name  = "TABLE_BACKEND"
+        value = "cosmos"
+      }
+      env {
+        name  = "COSMOS_TABLE_ENDPOINT"
+        value = "https://${azurerm_cosmosdb_account.main.name}.table.cosmos.azure.com:443/"
+      }
+      env {
+        name  = "COSMOS_TABLE_ACCOUNT"
+        value = azurerm_cosmosdb_account.main.name
+      }
+      env {
+        name        = "COSMOS_TABLE_KEY"
+        secret_name = "cosmos-table-key"
+      }
+      env {
         name  = "UPLOADS_CONTAINER"
         value = local.uploads_container
       }
@@ -372,6 +476,28 @@ resource "azurerm_container_app" "keyserver" {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         value = azurerm_application_insights.main.connection_string
       }
+
+      dynamic "env" {
+        for_each = var.enable_transcription ? [1] : []
+        content {
+          name        = "AZURE_SPEECH_KEY"
+          secret_name = "speech-key"
+        }
+      }
+      dynamic "env" {
+        for_each = var.enable_transcription ? [1] : []
+        content {
+          name  = "AZURE_SPEECH_REGION"
+          value = azurerm_cognitive_account.speech[0].location
+        }
+      }
+      dynamic "env" {
+        for_each = var.enable_transcription ? [1] : []
+        content {
+          name  = "AZURE_SPEECH_LANGUAGE"
+          value = var.speech_language
+        }
+      }
     }
   }
 
@@ -382,6 +508,18 @@ resource "azurerm_container_app" "keyserver" {
   secret {
     name  = "admin-password"
     value = random_password.admin_password.result
+  }
+  secret {
+    name  = "cosmos-table-key"
+    value = azurerm_cosmosdb_account.main.primary_key
+  }
+
+  dynamic "secret" {
+    for_each = var.enable_transcription ? [1] : []
+    content {
+      name  = "speech-key"
+      value = azurerm_cognitive_account.speech[0].primary_access_key
+    }
   }
 
   ingress {

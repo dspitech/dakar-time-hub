@@ -48,7 +48,7 @@ const bcrypt = require("bcryptjs");
 const { DefaultAzureCredential } = require("@azure/identity");
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { SecretClient } = require("@azure/keyvault-secrets");
-const { TableClient } = require("@azure/data-tables");
+const { TableClient, AzureNamedKeyCredential } = require("@azure/data-tables");
 
 // ============================================================
 // CONFIGURATION
@@ -71,8 +71,20 @@ const DOWNLOAD_KEY_TTL_HOURS = parseFloat(process.env.DOWNLOAD_KEY_TTL_HOURS || 
 const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || "admin").toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
+// Transcription / sous-titres automatiques (Azure AI Speech) — optionnel :
+// si les variables ne sont pas fournies, la fonctionnalité est simplement
+// désactivée (l'app ne plante pas, le lecteur n'affiche pas de bouton CC).
+const SPEECH_KEY = process.env.AZURE_SPEECH_KEY || "";
+const SPEECH_REGION = process.env.AZURE_SPEECH_REGION || "";
+const SPEECH_LANGUAGE = process.env.AZURE_SPEECH_LANGUAGE || "fr-FR";
+const TRANSCRIPTION_ENABLED = Boolean(SPEECH_KEY && SPEECH_REGION);
+
 if (!JWT_SECRET) { console.error("[FATAL] JWT_SECRET manquant"); process.exit(1); }
 if (!STORAGE_ACCOUNT_NAME || !KEYVAULT_URI) { console.error("[FATAL] STORAGE_ACCOUNT_NAME / KEYVAULT_URI manquants"); process.exit(1); }
+if (!Number.isFinite(DOWNLOAD_KEY_TTL_HOURS) || DOWNLOAD_KEY_TTL_HOURS <= 0) {
+  console.error(`[FATAL] DOWNLOAD_KEY_TTL_HOURS invalide (valeur reçue : "${process.env.DOWNLOAD_KEY_TTL_HOURS}") — attendu un nombre d'heures > 0`);
+  process.exit(1);
+}
 
 // ============================================================
 // OBSERVABILITE : Application Insights (optionnel)
@@ -88,6 +100,12 @@ if (process.env.APPLICATIONINSIGHTS_CONNECTION_STRING) {
   } catch (e) { console.warn("[WARN] Application Insights indisponible:", e.message); }
 }
 
+console.log(
+  TRANSCRIPTION_ENABLED
+    ? `[OK] Transcription automatique activée (Azure AI Speech, région ${SPEECH_REGION}, langue ${SPEECH_LANGUAGE})`
+    : "[INFO] Transcription automatique désactivée (AZURE_SPEECH_KEY / AZURE_SPEECH_REGION non définis)"
+);
+
 // ============================================================
 // CLIENTS AZURE (Managed Identity uniquement)
 // ============================================================
@@ -99,12 +117,36 @@ const downloadContainerClient = blobServiceClient.getContainerClient(DOWNLOAD_CO
 
 const secretClient = new SecretClient(KEYVAULT_URI, credential);
 
-const tableEndpoint = `https://${STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
-const usersTable = new TableClient(tableEndpoint, "Users", credential);
-const commentsTable = new TableClient(tableEndpoint, "Comments", credential);
-const revokedTable = new TableClient(tableEndpoint, "RevokedTokens", credential);
-const auditTable = new TableClient(tableEndpoint, "AuditLog", credential);
-const downloadRequestsTable = new TableClient(tableEndpoint, "DownloadRequests", credential);
+const TABLE_BACKEND = (process.env.TABLE_BACKEND || "cosmos").toLowerCase();
+const COSMOS_TABLE_ENDPOINT = process.env.COSMOS_TABLE_ENDPOINT;
+const COSMOS_TABLE_KEY = process.env.COSMOS_TABLE_KEY;
+const COSMOS_TABLE_ACCOUNT = process.env.COSMOS_TABLE_ACCOUNT;
+const tableEndpoint = COSMOS_TABLE_ENDPOINT || `https://${STORAGE_ACCOUNT_NAME}.table.core.windows.net`;
+const tableCredential = (COSMOS_TABLE_ENDPOINT && COSMOS_TABLE_KEY)
+  ? new AzureNamedKeyCredential(COSMOS_TABLE_ACCOUNT || new URL(COSMOS_TABLE_ENDPOINT).hostname.split(".")[0], COSMOS_TABLE_KEY)
+  : credential;
+
+function tableClient(name) { return new TableClient(tableEndpoint, name, tableCredential); }
+const usersTable = tableClient("Users");
+const videosTable = tableClient("Videos");
+const videoLogsTable = tableClient("VideoLogs");
+const commentsTable = tableClient("Comments");
+const authLogsTable = tableClient("AuthLogs");
+const revokedTable = tableClient("RevokedTokens");
+const auditTable = tableClient("AuditLog");
+const downloadRequestsTable = tableClient("DownloadRequests");
+const viewingLogsTable = tableClient("ViewingLogs");
+const videoSegmentsTable = tableClient("VideoSegments");
+const retentionScoresTable = tableClient("RetentionScores");
+
+function cleanTableEntity(entity) {
+  const clean = {};
+  for (const [key, value] of Object.entries(entity || {})) {
+    if (key === "etag" || key === "timestamp" || key.startsWith("odata.")) continue;
+    clean[key] = value;
+  }
+  return clean;
+}
 
 // ============================================================
 // AUDIT / OBSERVABILITE
@@ -229,6 +271,7 @@ app.use(["/keys", "/videos"], (req, res, next) => {
   next();
 });
 
+app.use(express.static(path.join(__dirname, "dist")));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ============================================================
@@ -249,6 +292,7 @@ app.post("/auth/register", async (req, res) => {
   await usersTable.createEntity({ partitionKey: "user", rowKey: username, passwordHash, role: "user", ephemeral: false, createdAt: new Date().toISOString() });
 
   const session = signSessionToken({ username, role: "user" });
+  await authLogsTable.createEntity({ partitionKey: username, rowKey: uuidv4(), type: "register", ip: clientIp(req), result: "success", ts: new Date().toISOString() }).catch(() => {});
   await audit({ type: "register", username, ip: clientIp(req), result: "success" });
   res.json({ access_token: session.token, expires_in: session.expiresIn, username, role: "user" });
 });
@@ -281,6 +325,7 @@ app.post("/auth/guest", async (req, res) => {
   const username = `guest-${crypto.randomBytes(3).toString("hex")}`;
   await usersTable.createEntity({ partitionKey: "user", rowKey: username, passwordHash: "", role: "guest", ephemeral: true, createdAt: new Date().toISOString() });
   const session = signSessionToken({ username, role: "guest" });
+  await authLogsTable.createEntity({ partitionKey: username, rowKey: uuidv4(), type: "guest_login", ip: clientIp(req), result: "success", ts: new Date().toISOString() }).catch(() => {});
   await audit({ type: "login", username, ip: clientIp(req), result: "success", detail: "compte invité éphémère" });
   res.json({ access_token: session.token, expires_in: session.expiresIn, username, role: "guest" });
 });
@@ -332,6 +377,19 @@ async function writeMeta(videoId, meta) {
     Buffer.from(JSON.stringify(meta)), { blobHTTPHeaders: { blobContentType: "application/json" } }
   );
 }
+async function upsertVideoEntity(meta) {
+  await videosTable.upsertEntity({
+    partitionKey: "video", rowKey: meta.videoId,
+    videoId: meta.videoId, title: meta.title, ownerUsername: meta.ownerUsername,
+    createdAt: meta.createdAt, updatedAt: new Date().toISOString(),
+    segmentCount: meta.segmentCount || 0, sourceFilename: meta.sourceFilename || ""
+  }, "Merge");
+}
+async function logVideoEvent(videoId, type, username, detail) {
+  try {
+    await videoLogsTable.createEntity({ partitionKey: videoId, rowKey: uuidv4(), type, username: username || "system", detail: detail || "", ts: new Date().toISOString() });
+  } catch (e) { console.error("[VIDEO LOG ERROR]", e.message); }
+}
 async function deleteContainerPrefix(containerClient, prefix) {
   for await (const blob of containerClient.listBlobsFlat({ prefix })) {
     await containerClient.getBlockBlobClient(blob.name).deleteIfExists();
@@ -362,11 +420,15 @@ async function deleteVideoCompletely(videoId) {
   await deleteContainerPrefix(hlsContainerClient, `${videoId}/`);
   await deleteContainerPrefix(uploadsContainerClient, `${videoId}/`);
   await deleteSegmentKeys(videoId, segmentCount);
+  await videosTable.deleteEntity("video", videoId).catch(() => {});
   for await (const c of commentsTable.listEntities({ queryOptions: { filter: `PartitionKey eq '${videoId}'` } })) {
     await commentsTable.deleteEntity(c.partitionKey, c.rowKey).catch(() => {});
   }
   for await (const r of downloadRequestsTable.listEntities({ queryOptions: { filter: `PartitionKey eq '${videoId}'` } })) {
     await downloadRequestsTable.deleteEntity(r.partitionKey, r.rowKey).catch(() => {});
+  }
+  for await (const l of videoLogsTable.listEntities({ queryOptions: { filter: `PartitionKey eq '${videoId}'` } })) {
+    await videoLogsTable.deleteEntity(l.partitionKey, l.rowKey).catch(() => {});
   }
 }
 
@@ -403,6 +465,147 @@ async function encryptSegmentsAndBuildPlaylist(videoId, outDir, baseUrl) {
   lines.push("#EXT-X-ENDLIST");
   await fsp.writeFile(path.join(outDir, "playlist.m3u8"), lines.join("\n"));
   return files.length;
+}
+
+// ------------------------------------------------------------
+// SOUS-TITRES AUTOMATIQUES (transcription audio -> WebVTT)
+// ------------------------------------------------------------
+// Principe (façon "sous-titres auto" YouTube) : à l'upload, l'audio de
+// chaque segment HLS non chiffré est extrait puis envoyé à Azure AI
+// Speech (reconnaissance vocale courte). Le texte renvoyé pour chaque
+// segment devient une réplique WebVTT, horodatée avec la même échelle de
+// temps que le segment correspondant. Le résultat (subtitles.vtt) est
+// déposé à côté de la playlist, dans le même container public que les
+// segments — il est donc directement chargeable par le lecteur via une
+// balise <track>. La génération se fait en arrière-plan (après la
+// réponse HTTP d'upload) pour ne jamais bloquer l'upload lui-même, et
+// échoue silencieusement (statut "error"/"unavailable") sans jamais
+// faire échouer le traitement principal de la vidéo.
+function vttTimestamp(totalSeconds) {
+  const s = Math.max(0, totalSeconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${sec.toFixed(3).padStart(6, "0")}`;
+}
+
+// Extrait, PENDANT que les segments sont encore en clair, un buffer audio
+// mono 16 kHz WAV par segment (petit — quelques centaines de Ko), avec son
+// intervalle de temps. Aucun appel réseau ici : uniquement du ffmpeg local,
+// donc rapide et sans impact sur la latence perçue par l'utilisateur qui
+// vient d'uploader.
+async function extractSegmentAudioClips(outDir) {
+  const files = (await fsp.readdir(outDir)).filter((f) => f.endsWith(".ts")).sort();
+  if (!files.length) return [];
+  const playlistText = await fsp.readFile(path.join(outDir, "playlist.m3u8"), "utf8");
+  const durations = [...playlistText.matchAll(/#EXTINF:([\d.]+),/g)].map((m) => parseFloat(m[1]));
+
+  const clips = [];
+  let cursor = 0;
+  for (let i = 0; i < files.length; i++) {
+    const dur = durations[i] || HLS_SEGMENT_SECONDS;
+    const start = cursor;
+    const end = cursor + dur;
+    cursor = end;
+
+    const segPath = path.join(outDir, files[i]);
+    const wavPath = `${segPath}.audio.wav`;
+    try {
+      await run("ffmpeg", ["-y", "-i", segPath, "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", wavPath]);
+      const wavBuffer = await fsp.readFile(wavPath);
+      clips.push({ index: i, start, end, wavBuffer });
+    } catch (err) {
+      console.warn(`[TRANSCRIPTION] extraction audio du segment ${i} ignorée:`, err.message);
+    } finally {
+      await fsp.rm(wavPath, { force: true }).catch(() => {});
+    }
+  }
+  return clips;
+}
+
+// Un appel = un segment (quelques secondes d'audio), via l'API REST
+// "short audio" d'Azure AI Speech — largement suffisant pour la durée
+// d'un segment HLS (quelques secondes).
+async function recognizeSegmentAudio(wavBuffer) {
+  const url = `https://${SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${encodeURIComponent(SPEECH_LANGUAGE)}&format=simple`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": SPEECH_KEY,
+      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+      Accept: "application/json",
+    },
+    body: wavBuffer,
+  });
+  if (!resp.ok) throw new Error(`Azure Speech STT HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.RecognitionStatus === "Success" && data.DisplayText) return data.DisplayText.trim();
+  return ""; // silence, bruit, ou aucune parole détectée sur ce segment
+}
+
+// Tâche de fond lancée après la réponse d'upload : ne doit jamais faire
+// planter le serveur ni laisser une vidéo dans un état incohérent — en
+// cas d'erreur, on retombe proprement sur transcriptionStatus="error".
+async function generateAndStoreSubtitles(videoId, clips) {
+  try {
+    if (!clips || !clips.length) {
+      await updateTranscriptionStatus(videoId, "empty", null);
+      return;
+    }
+
+    const cues = [];
+    for (const clip of clips) {
+      try {
+        const text = await recognizeSegmentAudio(clip.wavBuffer);
+        if (text) cues.push({ start: clip.start, end: clip.end, text });
+      } catch (err) {
+        console.warn(`[TRANSCRIPTION] reconnaissance du segment ${clip.index} échouée:`, err.message);
+      }
+    }
+
+    if (!cues.length) {
+      await updateTranscriptionStatus(videoId, "empty", null);
+      await audit({ type: "transcription", username: "system", videoId, result: "empty", detail: "Aucune parole détectée" });
+      return;
+    }
+
+    const lines = ["WEBVTT", ""];
+    cues.forEach((c, idx) => {
+      lines.push(String(idx + 1));
+      lines.push(`${vttTimestamp(c.start)} --> ${vttTimestamp(c.end)}`);
+      lines.push(c.text);
+      lines.push("");
+    });
+    const vttContent = lines.join("\n");
+
+    await hlsContainerClient.getBlockBlobClient(`${videoId}/subtitles.vtt`).uploadData(
+      Buffer.from(vttContent, "utf8"),
+      { blobHTTPHeaders: { blobContentType: "text/vtt; charset=utf-8" } }
+    );
+
+    const subtitlesUrl = `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${HLS_CONTAINER}/${videoId}/subtitles.vtt`;
+    await updateTranscriptionStatus(videoId, "ready", subtitlesUrl);
+    await audit({ type: "transcription", username: "system", videoId, result: "success", detail: `${cues.length} réplique(s) générée(s)` });
+  } catch (err) {
+    console.error("[TRANSCRIPTION ERROR]", err);
+    await updateTranscriptionStatus(videoId, "error", null).catch(() => {});
+    await audit({ type: "transcription", username: "system", videoId, result: "error", detail: err.message });
+  }
+}
+
+async function updateTranscriptionStatus(videoId, status, subtitlesUrl) {
+  try {
+    const meta = await readMeta(videoId);
+    meta.transcriptionStatus = status;
+    meta.subtitlesUrl = subtitlesUrl;
+    await writeMeta(videoId, meta);
+    await videosTable.upsertEntity(
+      { partitionKey: "video", rowKey: videoId, transcriptionStatus: status, subtitlesUrl: subtitlesUrl || "" },
+      "Merge"
+    );
+  } catch (err) {
+    console.error(`[TRANSCRIPTION] mise à jour du statut impossible pour ${videoId}:`, err.message);
+  }
 }
 
 // ------------------------------------------------------------
@@ -517,6 +720,18 @@ app.post("/upload", requireSession(["admin"]), upload.single("video"), async (re
       path.join(outDir, "playlist.m3u8"),
     ]);
 
+    // Extraction de l'audio des segments AVANT chiffrement (les .ts sont
+    // encore en clair à ce stade) : rapide, purement locale, ne bloque pas
+    // longtemps la réponse d'upload. La reconnaissance vocale elle-même
+    // (appels réseau à Azure Speech, potentiellement lente) est faite en
+    // tâche de fond une fois la réponse envoyée — voir plus bas.
+    const audioClips = TRANSCRIPTION_ENABLED
+      ? await extractSegmentAudioClips(outDir).catch((err) => {
+          console.warn("[TRANSCRIPTION] extraction audio impossible:", err.message);
+          return null;
+        })
+      : null;
+
     const publicBaseUrl = `${req.protocol}://${req.get("host")}`;
     const segmentCount = await encryptSegmentsAndBuildPlaylist(videoId, outDir, publicBaseUrl);
 
@@ -531,20 +746,40 @@ app.post("/upload", requireSession(["admin"]), upload.single("video"), async (re
     // de base à un export chiffré en cas de téléchargement approuvé
     await uploadsContainerClient.getBlockBlobClient(`${videoId}/${path.basename(inputPath)}`).uploadFile(inputPath);
 
-    await writeMeta(videoId, {
+    const createdAt = new Date().toISOString();
+    const transcriptionStatus = !TRANSCRIPTION_ENABLED ? "unavailable" : (audioClips && audioClips.length ? "processing" : "empty");
+    const meta = {
       videoId, title, ownerUsername: req.user.username,
-      createdAt: new Date().toISOString(),
+      createdAt,
       segmentCount,
       sourceFilename: path.basename(inputPath),
-    });
+      transcriptionStatus,
+      subtitlesUrl: null,
+    };
+    await writeMeta(videoId, meta);
+    await upsertVideoEntity(meta);
+    await videosTable.upsertEntity({ partitionKey: "video", rowKey: videoId, transcriptionStatus, subtitlesUrl: "" }, "Merge");
+    await logVideoEvent(videoId, "upload", req.user.username, `${segmentCount} segment(s) chiffrés`);
 
     await audit({ type: "upload", username: req.user.username, videoId, ip: clientIp(req), result: "success", detail: `${title} — ${segmentCount} segment(s), 1 clé AES-128 par segment` });
 
     res.json({
       videoId, title, segmentCount,
       playlistUrl: `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${HLS_CONTAINER}/${videoId}/playlist.m3u8`,
+      transcriptionStatus,
       message: "Vidéo segmentée et chiffrée avec succès (une clé par segment)",
     });
+
+    // Génération des sous-titres EN ARRIERE-PLAN, après la réponse HTTP :
+    // n'affecte jamais le temps de réponse de l'upload, et une éventuelle
+    // erreur (quota Azure Speech dépassé, réseau, etc.) ne fait pas
+    // échouer la vidéo elle-même — seul le statut "transcriptionStatus"
+    // reflète le résultat (voir GET /videos et GET /videos/:id/transcription-status).
+    if (transcriptionStatus === "processing") {
+      generateAndStoreSubtitles(videoId, audioClips).catch((err) => {
+        console.error("[TRANSCRIPTION] tâche de fond en erreur:", err.message);
+      });
+    }
   } catch (err) {
     console.error("[UPLOAD ERROR]", err);
     await audit({ type: "upload", username: req.user.username, videoId, ip: clientIp(req), result: "error", detail: err.message });
@@ -569,6 +804,8 @@ app.get("/videos", requireSession(), async (req, res) => {
           videoId: meta.videoId, title: meta.title, ownerUsername: meta.ownerUsername,
           createdAt: meta.createdAt, segmentCount: meta.segmentCount || 0,
           playlistUrl: `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${HLS_CONTAINER}/${videoId}/playlist.m3u8`,
+          transcriptionStatus: meta.transcriptionStatus || "unavailable",
+          subtitlesUrl: meta.transcriptionStatus === "ready" ? meta.subtitlesUrl : null,
         });
       } catch { /* pas de meta.json -> ignorer */ }
     }
@@ -580,6 +817,22 @@ app.get("/videos", requireSession(), async (req, res) => {
   }
 });
 
+// Polling léger utilisé par le lecteur pendant qu'une transcription est
+// encore "processing", pour activer le bouton CC sans recharger toute la
+// bibliothèque de vidéos.
+app.get("/videos/:videoId/transcription-status", requireSession(), async (req, res) => {
+  try {
+    const meta = await readMeta(req.params.videoId);
+    res.json({
+      videoId: req.params.videoId,
+      transcriptionStatus: meta.transcriptionStatus || "unavailable",
+      subtitlesUrl: meta.transcriptionStatus === "ready" ? meta.subtitlesUrl : null,
+    });
+  } catch {
+    res.status(404).json({ error: "Vidéo introuvable" });
+  }
+});
+
 app.patch("/videos/:videoId", requireSession(["admin"]), async (req, res) => {
   const { videoId } = req.params;
   const title = (req.body?.title || "").toString().slice(0, 120);
@@ -588,6 +841,8 @@ app.patch("/videos/:videoId", requireSession(["admin"]), async (req, res) => {
     const meta = await readMeta(videoId);
     meta.title = title;
     await writeMeta(videoId, meta);
+    await upsertVideoEntity(meta);
+    await logVideoEvent(videoId, "update", req.user.username, title);
     await audit({ type: "update_video", username: req.user.username, videoId, ip: clientIp(req), result: "success", detail: title });
     res.json({ message: "Vidéo mise à jour", videoId, title });
   } catch { res.status(404).json({ error: "Vidéo introuvable" }); }
@@ -651,6 +906,7 @@ function downloadRequestPublicView(r) {
     status: expired ? "expired" : r.status,
     requestedAt: r.requestedAt, decidedAt: r.decidedAt || null, decidedBy: r.decidedBy || null,
     downloadKeyExpiresAt: r.downloadKeyExpiresAt || null,
+    reason: r.reason || "",
   };
 }
 
@@ -666,14 +922,18 @@ app.post("/videos/:videoId/download-request", requireSession(), async (req, res)
     if (view.status !== "expired") return res.json(view);
   }
 
+  const reason = (req.body?.reason || "").toString().trim().slice(0, 1000);
+  if (reason.length < 10) return res.status(400).json({ error: "La raison du téléchargement est obligatoire (10 caractères minimum)" });
+
   const requestId = uuidv4();
   const entity = {
     partitionKey: videoId, rowKey: requestId,
-    username: req.user.username, status: "pending",
+    username: req.user.username, status: "pending", reason,
     requestedAt: new Date().toISOString(), decidedAt: "", decidedBy: "", downloadKeyExpiresAt: "", exportBlobName: "",
   };
   await downloadRequestsTable.createEntity(entity);
-  await audit({ type: "download_request", username: req.user.username, videoId, ip: clientIp(req), result: "pending" });
+  await logVideoEvent(videoId, "download_request", req.user.username, reason);
+  await audit({ type: "download_request", username: req.user.username, videoId, ip: clientIp(req), result: "pending", detail: reason });
   res.json(downloadRequestPublicView(entity));
 });
 
@@ -699,15 +959,35 @@ app.post("/admin/download-requests/:videoId/:requestId/approve", requireSession(
   try { entity = await downloadRequestsTable.getEntity(videoId, requestId); }
   catch { return res.status(404).json({ error: "Demande introuvable" }); }
 
+  // Empêche un double-traitement (double-clic, onglets multiples, requête
+  // rejouée) : une demande déjà décidée ne peut plus être ré-approuvée.
+  if (entity.status !== "pending") {
+    return res.status(409).json({ error: `Cette demande a déjà été traitée (statut : ${entity.status})`, request: downloadRequestPublicView(entity) });
+  }
+
   try {
-    const meta = await readMeta(videoId);
+    let meta;
+    try {
+      meta = await readMeta(videoId);
+    } catch (e) {
+      return res.status(404).json({ error: "Vidéo introuvable (meta.json manquant dans le container HLS)", detail: e.message });
+    }
 
     // Retrouver le fichier source brut privé
     let sourceBlobName = null;
-    for await (const b of uploadsContainerClient.listBlobsFlat({ prefix: `${videoId}/` })) { sourceBlobName = b.name; break; }
-    if (!sourceBlobName) return res.status(404).json({ error: "Fichier source introuvable pour cette vidéo" });
+    try {
+      for await (const b of uploadsContainerClient.listBlobsFlat({ prefix: `${videoId}/` })) { sourceBlobName = b.name; break; }
+    } catch (e) {
+      return res.status(500).json({ error: "Impossible de lister le container 'uploads' (droits Managed Identity ?)", detail: e.message });
+    }
+    if (!sourceBlobName) return res.status(404).json({ error: "Fichier source introuvable pour cette vidéo dans le container 'uploads'" });
 
-    const sourceBuf = await uploadsContainerClient.getBlockBlobClient(sourceBlobName).downloadToBuffer();
+    let sourceBuf;
+    try {
+      sourceBuf = await uploadsContainerClient.getBlockBlobClient(sourceBlobName).downloadToBuffer();
+    } catch (e) {
+      return res.status(500).json({ error: "Échec de lecture du fichier source brut", detail: e.message });
+    }
 
     // Clé d'export dédiée, distincte des clés de streaming
     const exportKey = crypto.randomBytes(16);
@@ -716,21 +996,29 @@ app.post("/admin/download-requests/:videoId/:requestId/approve", requireSession(
     const encrypted = Buffer.concat([cipher.update(sourceBuf), cipher.final()]);
 
     const exportBlobName = `${requestId}.enc`;
-    await downloadContainerClient.getBlockBlobClient(exportBlobName).uploadData(encrypted, { blobHTTPHeaders: { blobContentType: "application/octet-stream" } });
+    try {
+      await downloadContainerClient.getBlockBlobClient(exportBlobName).uploadData(encrypted, { blobHTTPHeaders: { blobContentType: "application/octet-stream" } });
+    } catch (e) {
+      return res.status(500).json({ error: "Échec d'écriture de l'export chiffré (container 'downloads')", detail: e.message });
+    }
 
     const expiresOn = new Date(Date.now() + DOWNLOAD_KEY_TTL_HOURS * 3600 * 1000);
-    await secretClient.setSecret(`dl-key-${requestId}`, Buffer.concat([exportKey, exportIv]).toString("base64"), {
-      contentType: "application/octet-stream",
-      expiresOn,
-      tags: { videoId, requestId, username: entity.username },
-    });
+    try {
+      await secretClient.setSecret(`dl-key-${requestId}`, Buffer.concat([exportKey, exportIv]).toString("base64"), {
+        contentType: "application/octet-stream",
+        expiresOn,
+        tags: { videoId, requestId, username: entity.username },
+      });
+    } catch (e) {
+      return res.status(500).json({ error: "Échec d'écriture de la clé d'export dans Key Vault", detail: e.message });
+    }
 
     entity.status = "approved";
     entity.decidedAt = new Date().toISOString();
     entity.decidedBy = req.user.username;
     entity.downloadKeyExpiresAt = expiresOn.toISOString();
     entity.exportBlobName = exportBlobName;
-    await downloadRequestsTable.updateEntity(entity, "Merge");
+    await downloadRequestsTable.updateEntity(cleanTableEntity(entity), "Merge");
 
     // La clé d'export est nouvelle et indépendante, mais on rotationne
     // aussi les clés de streaming par précaution (bonne hygiène Zero-Trust
@@ -750,10 +1038,15 @@ app.post("/admin/download-requests/:videoId/:requestId/deny", requireSession(["a
   const { videoId, requestId } = req.params;
   try {
     const entity = await downloadRequestsTable.getEntity(videoId, requestId);
+    // Empêche un double-traitement : une demande déjà décidée (approuvée ou
+    // déjà refusée) ne peut pas être refusée une seconde fois.
+    if (entity.status !== "pending") {
+      return res.status(409).json({ error: `Cette demande a déjà été traitée (statut : ${entity.status})`, request: downloadRequestPublicView(entity) });
+    }
     entity.status = "denied";
     entity.decidedAt = new Date().toISOString();
     entity.decidedBy = req.user.username;
-    await downloadRequestsTable.updateEntity(entity, "Merge");
+    await downloadRequestsTable.updateEntity(cleanTableEntity(entity), "Merge");
     await audit({ type: "download_deny", username: req.user.username, videoId, ip: clientIp(req), result: "success", detail: `demandeur: ${entity.username}` });
     res.json(downloadRequestPublicView(entity));
   } catch { res.status(404).json({ error: "Demande introuvable" }); }
@@ -806,13 +1099,59 @@ app.get("/videos/:videoId/download-key", requireSession(), async (req, res) => {
   }
 });
 
+
+// ============================================================
+// EXPORT DES METADONNEES VIDEO — JSON / CSV
+// ============================================================
+function csvEscape(value) {
+  const s = value == null ? "" : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+app.get("/videos/:videoId/export", requireSession(), async (req, res) => {
+  const format = (req.query.format || "json").toString().toLowerCase();
+  if (!["json", "csv"].includes(format)) return res.status(400).json({ error: "Format supporté : json ou csv" });
+  try {
+    const meta = await readMeta(req.params.videoId);
+    const comments = [];
+    for await (const c of commentsTable.listEntities({ queryOptions: { filter: `PartitionKey eq '${req.params.videoId}'` } })) {
+      comments.push({ commentId: c.rowKey, username: c.username, text: c.text, createdAt: c.createdAt });
+    }
+    const logs = [];
+    for await (const l of videoLogsTable.listEntities({ queryOptions: { filter: `PartitionKey eq '${req.params.videoId}'` } })) {
+      logs.push({ logId: l.rowKey, type: l.type, username: l.username, detail: l.detail, ts: l.ts });
+    }
+    const payload = {
+      exportedAt: new Date().toISOString(), exportedBy: req.user.username,
+      video: { ...meta, playlistUrl: `https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${HLS_CONTAINER}/${req.params.videoId}/playlist.m3u8` },
+      comments, logs, metadata: { encryption: "AES-128-CBC", hlsSegmentSeconds: HLS_SEGMENT_SECONDS, tableBackend: TABLE_BACKEND }
+    };
+    await audit({ type: "video_export", username: req.user.username, videoId: req.params.videoId, ip: clientIp(req), result: "success", detail: format });
+    if (format === "json") {
+      res.set({ "Content-Type": "application/json", "Content-Disposition": `attachment; filename="${req.params.videoId}.json"` });
+      return res.send(JSON.stringify(payload, null, 2));
+    }
+    const rows = [
+      ["type", "id", "username", "title", "text_or_detail", "created_at", "segment_count"],
+      ["video", meta.videoId, meta.ownerUsername, meta.title, "", meta.createdAt, meta.segmentCount || 0],
+      ...comments.map(c => ["comment", c.commentId, c.username, meta.title, c.text, c.createdAt, ""]),
+      ...logs.map(l => ["log", l.logId, l.username, meta.title, l.detail || l.type, l.ts, ""]),
+    ];
+    const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n");
+    res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${req.params.videoId}.csv"` });
+    res.send(csv);
+  } catch (err) {
+    res.status(404).json({ error: "Vidéo introuvable ou export impossible" });
+  }
+});
+
 // ============================================================
 // COMMENTAIRES — CRUD
 // ============================================================
 app.get("/videos/:videoId/comments", requireSession(), async (req, res) => {
   const comments = [];
   for await (const c of commentsTable.listEntities({ queryOptions: { filter: `PartitionKey eq '${req.params.videoId}'` } })) {
-    comments.push({ commentId: c.rowKey, username: c.username, text: c.text, createdAt: c.createdAt });
+    comments.push({ commentId: c.rowKey, username: c.username, text: c.text, createdAt: c.createdAt, updatedAt: c.updatedAt || c.createdAt });
   }
   comments.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   res.json({ comments });
@@ -823,9 +1162,9 @@ app.post("/videos/:videoId/comments", requireSession(), async (req, res) => {
   if (!text) return res.status(400).json({ error: "Commentaire vide" });
   const commentId = uuidv4();
   const createdAt = new Date().toISOString();
-  await commentsTable.createEntity({ partitionKey: req.params.videoId, rowKey: commentId, username: req.user.username, text, createdAt });
+  await commentsTable.createEntity({ partitionKey: req.params.videoId, rowKey: commentId, username: req.user.username, text, createdAt, updatedAt: createdAt });
   await audit({ type: "comment_create", username: req.user.username, videoId: req.params.videoId, ip: clientIp(req), result: "success" });
-  res.json({ commentId, username: req.user.username, text, createdAt });
+  res.json({ commentId, username: req.user.username, text, createdAt, updatedAt: createdAt });
 });
 
 app.patch("/videos/:videoId/comments/:commentId", requireSession(), async (req, res) => {
@@ -835,8 +1174,10 @@ app.patch("/videos/:videoId/comments/:commentId", requireSession(), async (req, 
     const entity = await commentsTable.getEntity(req.params.videoId, req.params.commentId);
     if (entity.username !== req.user.username) return res.status(403).json({ error: "Vous ne pouvez modifier que vos commentaires" });
     entity.text = text;
+    entity.updatedAt = new Date().toISOString();
     await commentsTable.updateEntity(entity, "Merge");
-    res.json({ message: "Commentaire mis à jour" });
+    await audit({ type: "comment_update", username: req.user.username, videoId: req.params.videoId, ip: clientIp(req), result: "success" });
+    res.json({ message: "Commentaire mis à jour", updatedAt: entity.updatedAt });
   } catch { res.status(404).json({ error: "Commentaire introuvable" }); }
 });
 
@@ -883,6 +1224,15 @@ app.get("/admin/audit", requireSession(["admin"]), async (req, res) => {
 });
 
 // ============================================================
+// REACT VITE SPA FALLBACK
+// ============================================================
+app.get(["/", "/login", "/register", "/dashboard", "/admin", "/presentation"], (req, res) => {
+  const indexDist = path.join(__dirname, "dist", "index.html");
+  if (fs.existsSync(indexDist)) return res.sendFile(indexDist);
+  return res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// ============================================================
 // HEALTH CHECK
 // ============================================================
 app.get("/healthz", (req, res) => {
@@ -892,6 +1242,16 @@ app.get("/healthz", (req, res) => {
 // ============================================================
 // BOOTSTRAP DU COMPTE ADMIN + DEMARRAGE
 // ============================================================
+async function ensureTables() {
+  const tables = [usersTable, videosTable, videoLogsTable, commentsTable, authLogsTable, revokedTable, auditTable, downloadRequestsTable, viewingLogsTable, videoSegmentsTable, retentionScoresTable];
+  for (const client of tables) {
+    await client.createTable().catch((e) => {
+      if (![409, 412].includes(e.statusCode)) console.warn(`[WARN] Création table ignorée: ${e.message}`);
+    });
+  }
+  console.log(`[OK] Tables initialisées sur ${TABLE_BACKEND === "cosmos" ? "Cosmos DB Table API" : "Azure Table Storage"}`);
+}
+
 async function ensureAdminBootstrap() {
   if (!ADMIN_PASSWORD) { console.warn("[WARN] ADMIN_PASSWORD non défini — bootstrap admin ignoré"); return; }
   try {
@@ -906,6 +1266,7 @@ async function ensureAdminBootstrap() {
 }
 
 fsp.mkdir(TMP_ROOT, { recursive: true })
+  .then(() => ensureTables())
   .then(() => ensureAdminBootstrap())
   .then(() => { app.listen(PORT, () => console.log(`[OK] Zero-Trust Key Server démarré sur le port ${PORT}`)); })
   .catch((err) => { console.error("[FATAL] Démarrage impossible:", err); process.exit(1); });

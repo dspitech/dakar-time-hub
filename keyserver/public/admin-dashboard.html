@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administration — Zero-Trust HLS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-page">
+
+  <aside class="sidebar">
+    <div class="brand side">
+      <span class="brand-mark">◈</span>
+      <div>
+        <div class="brand-name">ZERO‑TRUST</div>
+        <div class="brand-sub">Administration</div>
+      </div>
+    </div>
+
+    <div class="user-mini card-surface">
+      <span id="roleBadge" class="role-badge">—</span>
+      <strong id="usernameLabel">—</strong>
+    </div>
+
+    <nav>
+      <div class="side-nav-label">Principal</div>
+      <div class="side-menu">
+        <button data-view="overview" class="active">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
+          Vue globale
+        </button>
+        <button data-view="library">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+          Bibliothèque
+        </button>
+        <button data-view="comments">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          Commentaires
+        </button>
+      </div>
+
+      <div class="side-nav-label" data-admin>Administration</div>
+      <div class="side-menu">
+        <button data-admin data-view="upload">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
+          Uploader vidéo
+        </button>
+        <button data-admin data-view="videos">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg></span>
+          Gestion vidéos
+        </button>
+        <button data-admin data-view="requests">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+          Demandes téléchargement <span id="pendingBadge" class="nav-badge" hidden>0</span>
+        </button>
+        <button data-admin data-view="users">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          Utilisateurs
+        </button>
+        <button data-admin data-view="audit">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+          Logs & audit
+        </button>
+      </div>
+    </nav>
+
+    <button id="logoutBtn" class="btn-ghost logout">Déconnexion</button>
+  </aside>
+
+  <main class="dash-main">
+    <header class="dash-header">
+      <div>
+        <span class="eyebrow" id="dashEyebrow">Console d'administration</span>
+        <h1 id="dashTitle">Dashboard administrateur</h1>
+      </div>
+      <div class="dash-header-actions">
+        <span class="status-pill" id="apiStatus"><span class="dot"></span> vérification…</span>
+      </div>
+    </header>
+
+    <section id="view-overview" class="dash-view">
+      <div class="cards">
+        <article class="stat-card card-surface">
+          <div class="stat-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+          </div>
+          <b id="statVideos">0</b>
+          <span>Vidéos disponibles</span>
+          <div class="stat-trend">Bibliothèque chiffrée HLS</div>
+        </article>
+        <article class="stat-card card-surface">
+          <div class="stat-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          </div>
+          <b id="statSegments">0</b>
+          <span>Segments chiffrés</span>
+          <div class="stat-trend">AES-128 par segment</div>
+        </article>
+        <article class="stat-card card-surface">
+          <div class="stat-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <b id="statPending">0</b>
+          <span>Demandes en attente</span>
+          <div class="stat-trend" id="statPendingHint">Aucune action requise</div>
+        </article>
+      </div>
+
+      <div class="panel card-surface">
+        <div class="panel-label">Bienvenue</div>
+        <p id="welcomeText">Console complète : upload, gestion des vidéos, modération des téléchargements, utilisateurs et audit.</p>
+        <div class="quick-actions" id="adminQuickActions">
+          <button type="button" class="quick-action-btn" data-goto="upload">
+            <div class="qa-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+            <div class="qa-label">Uploader une vidéo</div>
+            <div class="qa-desc">Segmentation & chiffrement auto</div>
+          </button>
+          <button type="button" class="quick-action-btn" data-goto="requests">
+            <div class="qa-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+            <div class="qa-label">Traiter les demandes</div>
+            <div class="qa-desc">Approuver ou refuser les téléchargements</div>
+          </button>
+          <button type="button" class="quick-action-btn" data-goto="audit">
+            <div class="qa-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+            <div class="qa-label">Consulter l'audit</div>
+            <div class="qa-desc">Journal des événements sécurité</div>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-library" class="dash-view" hidden>
+      <div class="grid-2">
+        <div class="panel card-surface">
+          <div class="panel-head">
+            <div>
+              <div class="panel-label">Vidéos</div>
+              <h2>Bibliothèque</h2>
+            </div>
+            <button type="button" class="btn-action ghost" id="refreshBtn">↻ Actualiser</button>
+          </div>
+          <ul class="video-list" id="videoList"><li class="empty">Chargement…</li></ul>
+        </div>
+
+        <div class="panel player-panel card-surface">
+          <div class="player-head">
+            <div>
+              <div class="panel-label">Lecture protégée</div>
+              <h2 id="playerTitle">Sélectionnez une vidéo</h2>
+            </div>
+            <div class="player-actions">
+              <button type="button" class="btn-action ghost small" id="ccBtn" hidden title="Sous-titres">CC</button>
+              <button type="button" class="btn-action ghost small" id="downloadBtn" hidden>⬇ Télécharger</button>
+              <button type="button" class="btn-action ghost small" id="exportJsonBtn" hidden>Export JSON</button>
+              <button type="button" class="btn-action ghost small" id="exportCsvBtn" hidden>Export CSV</button>
+            </div>
+          </div>
+          <video id="video" controls></video>
+          <div class="segment-monitor" id="segmentMonitor" hidden>
+            <div class="panel-label">Segments lus en temps réel</div>
+            <div id="segmentTimeline" class="segment-chain live"></div>
+          </div>
+          <div class="key-trace">
+            <div class="key-trace-row"><span>1.</span> Jeton de session validé</div>
+            <div class="key-trace-row"><span>2.</span> Playlist chargée avec clés par segment</div>
+            <div class="key-trace-row"><span>3.</span> Clé lue dans Key Vault à chaque segment</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-comments" class="dash-view" hidden>
+      <div class="panel card-surface">
+        <div class="panel-label">Commentaires</div>
+        <h2 id="commentsTitle">Sélectionnez une vidéo dans la bibliothèque</h2>
+        <ul class="comment-list" id="commentList"></ul>
+        <form id="commentForm" class="comment-form">
+          <input type="text" id="commentInput" class="text-input" placeholder="Ajouter un commentaire…" maxlength="500">
+          <button class="btn-primary small" type="submit">Publier</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="view-upload" class="dash-view admin-only" hidden>
+      <div class="panel vault card-surface">
+        <div class="panel-label">Admin · Upload</div>
+        <h2>Upload → segmentation → chiffrement automatique</h2>
+        <form id="uploadForm">
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <input type="file" id="fileInput" accept="video/*" hidden>
+            <div class="dropzone-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <div class="dropzone-text" id="dropzoneText">Glissez un fichier ici, ou cliquez pour parcourir</div>
+            <div class="dropzone-hint">MP4 · MOV · MKV — 1 Go max</div>
+          </label>
+          <input id="titleInput" class="text-input" placeholder="Titre de la vidéo (optionnel)">
+          <button id="uploadBtn" class="btn-primary" type="submit" disabled>Téléverser & chiffrer</button>
+        </form>
+        <div class="pipeline" id="pipeline" hidden>
+          <div class="pipeline-row">
+            <span id="pipelineLabel">Téléversement…</span>
+            <span id="pipelinePct">0%</span>
+          </div>
+          <div class="upload-bar"><div class="upload-bar-fill" id="uploadBarFill"></div></div>
+          <div id="segmentChain" class="segment-chain"></div>
+        </div>
+        <div class="log" id="uploadLog" hidden></div>
+      </div>
+    </section>
+
+    <section id="view-videos" class="dash-view admin-only" hidden>
+      <div class="panel card-surface">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Admin · Vidéos</div>
+            <h2>Gestion du catalogue</h2>
+          </div>
+          <button type="button" class="btn-action ghost" id="refreshVideosBtn">↻ Actualiser</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="adminVideoTable">
+            <thead>
+              <tr>
+                <th>Titre</th>
+                <th>Propriétaire</th>
+                <th>Créée</th>
+                <th>Segments</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-requests" class="dash-view admin-only" hidden>
+      <div class="panel card-surface">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Admin · Demandes</div>
+            <h2>Autorisations de téléchargement</h2>
+          </div>
+          <button type="button" class="btn-action ghost" id="refreshDownloadReqBtn">↻ Actualiser</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="downloadReqTable">
+            <thead>
+              <tr>
+                <th>Vidéo</th>
+                <th>Demandeur</th>
+                <th>Raison</th>
+                <th>Date</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-users" class="dash-view admin-only" hidden>
+      <div class="panel card-surface">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Admin · Utilisateurs</div>
+            <h2>Comptes enregistrés</h2>
+          </div>
+          <button type="button" class="btn-action ghost" id="refreshUsersBtn">↻ Actualiser</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="usersTable">
+            <thead>
+              <tr>
+                <th>Identifiant</th>
+                <th>Rôle</th>
+                <th>Créé</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-audit" class="dash-view admin-only" hidden>
+      <div class="panel card-surface">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Admin · Logs</div>
+            <h2>Journal d'audit</h2>
+          </div>
+          <button type="button" class="btn-action ghost" id="refreshAuditBtn">↻ Actualiser</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="auditTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Utilisateur</th>
+                <th>Vidéo</th>
+                <th>IP</th>
+                <th>Résultat</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="downloadModalOverlay" hidden>
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="downloadModalClose">×</button>
+      <div class="modal-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <div id="downloadModalBody"></div>
+    </div>
+  </div>
+
+  <div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-card">
+      <h3 id="confirmTitle">Confirmer</h3>
+      <p id="confirmMessage">Êtes-vous sûr ?</p>
+      <div class="confirm-actions">
+        <button type="button" class="btn-action ghost" id="confirmCancel">Annuler</button>
+        <button type="button" class="btn-action primary" id="confirmOk">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

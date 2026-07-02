@@ -140,6 +140,43 @@ génère **une clé AES-128 par segment** :
    fichier `.enc` déjà téléchargé devient définitivement illisible, même hors ligne, tant qu'aucune
    nouvelle autorisation n'est accordée.
 
+## 2quater. Sous-titres automatiques (transcription façon YouTube)
+
+À l'upload, en plus du chiffrement, la plateforme peut générer automatiquement des sous-titres,
+comme les sous-titres auto-générés de YouTube :
+
+1. L'audio de chaque segment HLS est extrait **avant chiffrement** (`ffmpeg`, mono 16 kHz).
+2. Chaque segment audio est envoyé à **Azure AI Speech** (reconnaissance vocale courte), qui
+   renvoie le texte prononcé.
+3. Les répliques sont assemblées en un fichier **WebVTT** (`subtitles.vtt`), horodaté segment par
+   segment, déposé à côté de la playlist dans le même container public (`hls-segments`).
+4. Le lecteur affiche un bouton **CC** dès qu'une vidéo a des sous-titres disponibles ; tant que la
+   génération est en cours, le bouton est visible mais désactivé (« Sous-titres en cours de
+   génération… ») et se réactive automatiquement une fois prêt, sans recharger la page — comme
+   l'apparition différée des sous-titres auto sur YouTube.
+
+Cette étape tourne **en tâche de fond après la réponse d'upload** : elle n'ajoute donc aucune
+latence perceptible à l'upload, et une erreur de transcription (quota dépassé, réseau, etc.) ne
+fait jamais échouer la vidéo elle-même — seul le champ `transcriptionStatus`
+(`processing` / `ready` / `empty` / `error` / `unavailable`) reflète le résultat.
+
+**Optionnel et sans impact si non configuré** : si les variables `AZURE_SPEECH_KEY` /
+`AZURE_SPEECH_REGION` sont absentes, la fonctionnalité est simplement désactivée au démarrage
+(`transcriptionStatus: "unavailable"`, aucun bouton CC affiché) ; le reste de la plateforme
+fonctionne à l'identique. Ces variables sont provisionnées automatiquement par Terraform
+(`azurerm_cognitive_account.speech`, `kind = "SpeechServices"`) si `var.enable_transcription =
+true` (par défaut). Pour désactiver entièrement la ressource Azure correspondante :
+
+```powershell
+# terraform/terraform.tfvars
+enable_transcription = false
+```
+
+| Endpoint | Rôle |
+|---|---|
+| `GET /videos` | inclut désormais `transcriptionStatus` et `subtitlesUrl` par vidéo |
+| `GET /videos/:videoId/transcription-status` | polling léger utilisé par le lecteur pendant que `transcriptionStatus = "processing"` |
+
 ## 3. Flux de lecture protégée (conforme §4.1 du cahier des charges)
 
 1. L'utilisateur authentifié (jeton de session obtenu au login) demande la playlist `.m3u8`
@@ -358,3 +395,28 @@ le même workspace, pas de ressource facturée séparément au-delà de l'ingest
   (voir §3bis) - utile après un upload pour prouver le chiffrement sans faire confiance à l'interface.
 - **Un fichier téléchargé ne se lit plus** : c'est voulu si le délai `DOWNLOAD_KEY_TTL_HOURS` (24h par
   défaut) est dépassé - refaites une demande de téléchargement depuis la plateforme.
+
+## Mise à jour Dashboard + Cosmos DB
+
+Cette version sépare l'interface en pages dédiées :
+
+- `index.html` : présentation globale du site et du flux Zero‑Trust.
+- `login.html` : formulaire de connexion isolé, redirection automatique vers `admin-dashboard.html` ou `user-dashboard.html` selon le rôle.
+- `register.html` : formulaire d'inscription isolé, redirection vers le dashboard utilisateur.
+- `admin-dashboard.html` : dashboard administrateur avec sidebar, upload, gestion vidéos, utilisateurs, demandes de téléchargement et logs.
+- `user-dashboard.html` : dashboard utilisateur sans sections admin.
+
+Les contrôles de permission restent appliqués côté serveur : les routes d'upload, gestion vidéos, utilisateurs, audit et validation de téléchargement exigent le rôle `admin`.
+
+La base applicative utilise maintenant Cosmos DB Table API via Terraform. Les tables applicatives sont : `Users`, `Videos`, `VideoLogs`, `Comments`, `AuthLogs`, `DownloadRequests`, `RevokedTokens`, `AuditLog`.
+
+Les vidéos disposent d'un endpoint d'export :
+
+```text
+GET /videos/:videoId/export?format=json
+GET /videos/:videoId/export?format=csv
+```
+
+Les exports incluent les métadonnées vidéo, les commentaires et les logs vidéo. Le dashboard affiche les boutons `Export JSON` et `Export CSV` à côté du bouton `Télécharger`.
+
+Les demandes de téléchargement exigent maintenant un champ `raison` côté client et côté serveur. L'administrateur voit cette raison dans le tableau des demandes.

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="0;url=login.html">
+  <title>Redirection — Zero-Trust HLS</title>
+</head>
+<body>
+  <p>Redirection vers <a href="login.html">login.html</a>…</p>
+  <script>
+    const token = localStorage.getItem('zt_token');
+    const role = localStorage.getItem('zt_role');
+    if (token) {
+      location.href = role === 'admin' ? 'admin-dashboard.html' : 'user-dashboard.html';
+    } else {
+      location.href = 'login.html';
+    }
+  </script>
+</body>
+</html>

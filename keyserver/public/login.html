@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion — Zero-Trust HLS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-shell">
+    <a href="index.html" class="back-link">← Retour à l'accueil</a>
+    <div class="auth-card panel card-surface">
+      <div class="brand">
+        <span class="brand-mark">◈</span>
+        <div>
+          <div class="brand-name">ZERO‑TRUST HLS</div>
+          <div class="brand-sub">Connexion sécurisée</div>
+        </div>
+      </div>
+      <h1>Se connecter</h1>
+      <p class="muted">Accédez à votre dashboard selon votre rôle (admin, utilisateur ou invité).</p>
+
+      <form id="loginForm" class="authform">
+        <label for="loginUsername">Identifiant</label>
+        <input type="text" id="loginUsername" class="text-input" placeholder="nom.utilisateur" required autocomplete="username">
+
+        <label for="loginPassword">Mot de passe</label>
+        <input type="password" id="loginPassword" class="text-input" placeholder="••••••••" required autocomplete="current-password">
+
+        <button type="submit" class="btn-primary" id="loginSubmitBtn">Connexion</button>
+      </form>
+
+      <div class="authbox-sep">ou</div>
+      <button type="button" id="guestBtn" class="btn-outline full">Continuer en tant qu'invité</button>
+
+      <p class="auth-footer muted">
+        Pas encore de compte ? <a href="register.html">Créer un compte</a>
+      </p>
+
+      <div id="authLog" class="log error" hidden></div>
+    </div>
+  </div>
+  <script src="auth.js"></script>
+</body>
+</html>
